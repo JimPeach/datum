@@ -12,4 +12,5 @@ include_directories("external/include")
 link_directories("external/lib")
 
 add_subdirectory ("test")
+add_subdirectory ("test/benchmarks")
 add_subdirectory ("experiments")

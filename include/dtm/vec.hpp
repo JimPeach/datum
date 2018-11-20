@@ -11,13 +11,19 @@
 #include <cstddef>
 
 #include "dtm/detail/move_buffer.hpp"
+#include "dtm/detail/relocate_buffer.hpp"
 #include "dtm/detail/iterators.hpp"
 #include "dtm/detail/ptr.hpp"
 
 namespace dtm {
-template <typename T> class vec_iterator;
-
-template <typename T, typename Buffer = detail::move_buffer<T>>
+template <
+    typename T, 
+    typename Buffer = 
+        typename std::conditional<std::is_trivially_copyable<T>::value,
+                detail::relocate_buffer<T>, // If the type is trivially copyable we can use the relocation buffer
+                detail::move_buffer<T>      // Otherwise we'll fall back on the move buffer.
+        >::type
+>
 class vec {
     static_assert(std::is_nothrow_move_constructible<T>::value &&
                   std::is_nothrow_move_assignable<T>::value);
@@ -96,12 +102,17 @@ protected:
 private:
     buffer_t buffer;
 
+    // The operation "emplace_back" is split into two functions:
+    // * grow_if_necessary
+    // * unsafe_emplace_back 
+    //
+    // grow_if_necessary triggers a buffer growth if the size is currently at capacity.
+    // unsafe_emplace_back assumes the size is less than capacity, and constructs the
+    // object at the current end.
     void grow_if_necessary();
 
     template <typename... Args>
     T& unsafe_emplace_back(Args&&...);
-
-    T* prepare_insert(const_iterator pos);
 };
 
 template <typename T, size_t Count, typename Buffer = detail::move_buffer<T>>

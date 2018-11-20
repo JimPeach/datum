@@ -51,7 +51,7 @@ struct move_buffer
     ~move_buffer();
 
     // Reallocates the buffer to meet a new capacity constraint. Will move values.
-    T* reallocate(size_t new_capacity);
+    void reallocate(size_t new_capacity);
 
     // Constructs a value at the provided pointer, forwarding arguments to the constructor.
     // Not noexcept - generally constructors are allowed to throw.
@@ -130,7 +130,7 @@ template <typename T>
 move_buffer<T>::~move_buffer() {
     for (T* ptr = begin; ptr != end; ++ptr)
         destruct(ptr);
-    operator delete[] (static_cast<void*>(begin));
+    deallocate(begin);
 }
 
 template <typename T>
@@ -182,7 +182,7 @@ void move_buffer<T>::move_from(move_buffer&& rhs) noexcept {
 }
 
 template <typename T>
-T* move_buffer<T>::reallocate(size_t new_size) {
+void move_buffer<T>::reallocate(size_t new_size) {
     // This function isn't noexcept because allocate can throw. However, everything past this
     // point is noexcept. And if allocate throws, we haven't changed anything. Therefore this
     // function provides the strong exception guarantee.
@@ -216,7 +216,6 @@ T* move_buffer<T>::reallocate(size_t new_size) {
     begin = new_buffer;
     end = new_it;
     capacity = new_size;
-    return end;
 }
 
 template <typename T>
@@ -277,8 +276,7 @@ bool move_buffer<T>::shift_right(size_t offset, size_t num)
     if (size + num <= capacity) {
         if (offset == size) {
             end += num;
-            // New space is at the end of the list. So, return false because they'll need to be
-            // constructed.
+            // New space is at the end of the list. So, return false because they'll need to be constructed.
             return false;
         }
         else {

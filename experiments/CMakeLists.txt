@@ -14,3 +14,8 @@ target_link_libraries (exp_realloc_vs_copy benchmark pthread)
 add_executable (exp_cache_miss "cache_miss.cpp")
 target_compile_options (exp_cache_miss PUBLIC "-std=c++14")
 target_link_libraries (exp_cache_miss benchmark pthread)
+
+add_executable (exp_function_call "function_call.cpp")
+target_compile_options (exp_function_call PUBLIC "-std=c++14")
+target_link_libraries (exp_function_call benchmark pthread)
+

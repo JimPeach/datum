@@ -6,7 +6,7 @@ namespace detail {
 template <typename T>
 class ptr
 {
-    template <typename, typename> friend class vec;
+    template <typename> friend class vec;
 public:
     explicit ptr(T* p_) noexcept { p = p_; }
 

@@ -4,29 +4,38 @@
 #ifndef INCLUDED_DATUM_VEC_HPP
 #define INCLUDED_DATUM_VEC_HPP
 
+#include <new>
+#include <array>
 #include <utility>
 #include <type_traits>
 #include <iterator>
 #include <initializer_list>
 #include <cstddef>
+#include <cstring>
 
-#include "dtm/detail/move_buffer.hpp"
-#include "dtm/detail/relocate_buffer.hpp"
+#include "dtm/tup.hpp"
+
+#include "dtm/detail/config.hpp"
 #include "dtm/detail/iterators.hpp"
 #include "dtm/detail/ptr.hpp"
 
+//
+// XXX provide exception safety via two-stage move.
+//
+
 namespace dtm {
-template <
-    typename T, 
-    typename Buffer = 
-        typename std::conditional<std::is_trivially_copyable<T>::value,
-                detail::relocate_buffer<T>, // If the type is trivially copyable we can use the relocation buffer
-                detail::move_buffer<T>      // Otherwise we'll fall back on the move buffer.
-        >::type
->
+
+template <typename T>
+struct is_relocatable {
+    // By default, all trivially copyable types are relocatable.
+    static constexpr bool value = std::is_trivially_copyable<T>::value;
+};
+
+template <typename T>
+using is_relocatable_t = typename std::conditional<is_relocatable<T>::value, std::true_type, std::false_type>::type;
+
+template <typename T>
 class vec {
-    static_assert(std::is_nothrow_move_constructible<T>::value &&
-                  std::is_nothrow_move_assignable<T>::value);
 public:
     using value_type = T;
 
@@ -35,35 +44,41 @@ public:
     using reverse_iterator = std::reverse_iterator<iterator>;
     using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
-    using buffer_t = Buffer;
-
-    static constexpr int minimum_growth_size = 4;
-    static constexpr float growth_factor = 1.5; 
-
-    vec() = default;
+    vec();
 
     template <typename... Args>
-    explicit vec(size_t count, Args&&...);
+    explicit vec(size_t count, Args&&... args);
+
     vec(std::initializer_list<T> init);
 
     template <typename It, typename = detail::require_input_iterator<It>>
     vec(It begin, It end);
 
+    vec(const vec<T>& v);
+
+    vec(vec<T>&& v);
+
+    ~vec();
+
+    vec& operator= (const vec& rhs);
+    vec& operator= (vec&& rhs);
+    vec& operator= (std::initializer_list<T> init);
+
     iterator begin() noexcept;
     iterator end() noexcept;
     const_iterator begin() const noexcept;
     const_iterator end() const noexcept;
+    const_iterator cbegin() const noexcept;
+    const_iterator cend() const noexcept;
 
     reverse_iterator rbegin() noexcept;
     reverse_iterator rend() noexcept;
     const_reverse_iterator rbegin() const noexcept;
     const_reverse_iterator rend() const noexcept;
+    const_reverse_iterator crbegin() const noexcept;
+    const_reverse_iterator crend() const noexcept;
 
     void swap(vec& rhs) noexcept;
-
-    size_t size() const noexcept;
-    bool empty() const noexcept;
-    size_t capacity() const noexcept;
 
     T& front() noexcept;
     T& back() noexcept;
@@ -71,68 +86,135 @@ public:
     const T& front() const noexcept;
     const T& back() const noexcept;
 
-    T& operator[] (size_t index) noexcept;
-    const T& operator[] (size_t index) const noexcept;
+    T& operator[] (size_t) noexcept;
+    const T& operator[] (size_t) const noexcept;
 
-    void reserve(size_t new_capacity);
+    T& at(size_t);
+    const T& at(size_t) const;
+
+    size_t size() const noexcept;
+    bool empty() const noexcept;
+    size_t capacity() const noexcept;
+
+    void reserve(size_t size);
     void shrink_to_fit();
+
+    void clear();
     
     template <typename... Args>
     void resize(size_t new_size, Args&&...);
 
-    T& push_back(const T& value);
-    T& push_back(T&& value);
-
-    template <typename... Args>
-    T& emplace_back(Args&&...);
-
-    void clear() noexcept;
-    void pop_back() noexcept;
-
-    iterator insert(const_iterator pos, const T& value);
-    iterator insert(const_iterator pos, T&& value);
-    iterator insert(const_iterator pos, size_t count, const T& value);
-    template <typename It>
-    iterator insert(const_iterator pos, It first, It last);
-    iterator insert(const_iterator pos, std::initializer_list<T> init);
-
-protected:
-    vec(T* begin, T* end, size_t capacity);
-
-private:
-    buffer_t buffer;
-
-    // The operation "emplace_back" is split into two functions:
-    // * grow_if_necessary
-    // * unsafe_emplace_back 
-    //
-    // grow_if_necessary triggers a buffer growth if the size is currently at capacity.
-    // unsafe_emplace_back assumes the size is less than capacity, and constructs the
-    // object at the current end.
-    void grow_if_necessary();
-
-    template <typename... Args>
-    T& unsafe_emplace_back(Args&&...);
-};
-
-template <typename T, size_t Count, typename Buffer = detail::move_buffer<T>>
-class small_vec : public vec<T,Buffer> {
-    static_assert(std::is_nothrow_move_constructible<T>::value &&
-                  std::is_nothrow_move_assignable<T>::value);
-public:
-    small_vec();
-
-    template <typename... Args>
-    explicit small_vec(size_t count, Args&&...);
-
-    small_vec(std::initializer_list<T> init);
+    void assign(const vec<T>& rhs);
+    void assign(vec<T>&& rhs);
+    void assign(std::initializer_list<T> init);
 
     template <typename It, typename = detail::require_input_iterator<It>>
-    small_vec(It begin, It end);
+    void assign(It begin, It end);
 
-    small_vec(const vec<T,Buffer>& v);
+    template <typename... Args>
+    void fill(size_t count, Args&&... args);
 
-    small_vec(vec<T,Buffer>&& v);
+    void pop_back();
+
+    void push_back(const T&);
+    void push_back(T&&);
+
+    template <typename... Args>
+    void emplace_back(Args&&...);
+
+    template <typename... Args>
+    void emplace(const_iterator it, Args&&...);
+
+    template <typename It, typename = detail::require_input_iterator<It>>
+    void insert(const_iterator it, It begin, It end);
+
+    void insert(const_iterator it, const T&);
+    void insert(const_iterator it, T&&);
+
+protected:
+    vec(T* local_store, size_t local_store_capacity);
+
+    template <typename... Args>
+    vec(T* local_store, size_t local_store_capacity, size_t count, Args&&... args);
+
+    vec(T* local_store, size_t local_store_capacity, std::initializer_list<T> init);
+
+    template <typename It, typename = detail::require_input_iterator<It>>
+    vec(T* local_store, size_t local_store_capacity, It begin, It end);
+
+    vec(T* local_store, size_t local_store_capacity, const vec<T>& v);
+
+    vec(T* local_store, size_t local_store_capacity, vec<T>&& v);
+
+private:
+    T* m_begin;
+    T* m_end;
+
+#ifdef DATUM_IS_64BIT_SIZEt
+    size_t m_capacity : 63;
+    bool m_local_storage : 1;
+#else
+    size_t m_capacity;
+    bool m_local_storage;
+#endif
+
+    template <typename It>
+    void assign_internal(It begin, It end, std::input_iterator_tag);
+
+    template <typename It>
+    void assign_internal(It begin, It end, std::forward_iterator_tag);
+
+    template <typename It>
+    void insert_internal(const_iterator pos, It begin, It end, std::input_iterator_tag);
+
+    template <typename It>
+    void insert_internal(const_iterator pos, It begin, It end, std::forward_iterator_tag);
+
+
+    void grow_if_necessary();
+
+    void reserve_internal(size_t size, std::true_type is_relocatable);
+    void reserve_internal(size_t size, std::false_type is_not_relocatable);
+
+    tup<T*, bool> create_space(const_iterator pos, size_t length, std::true_type is_relocatable);
+    tup<T*, bool> create_space(const_iterator pos, size_t length, std::false_type is_not_relocatable);
+    tup<T*, bool> create_space(const_iterator pos, size_t length);
+
+    T* allocate(size_t size);
+    void release();
+};
+
+template <typename T, size_t LocalSize>
+class small_vec : public vec<T> {
+public:
+    small_vec()
+        : vec<T>(local_storage.begin(), local_storage.size())
+    {}
+
+    template <typename... Args>
+    explicit small_vec(size_t count, Args&&... args)
+        : vec<T>(local_storage.begin(), local_storage.size(), std::forward<Args>(args)...)
+    {}
+
+    small_vec(std::initializer_list<T> init)
+        : vec<T>(local_storage.begin(), local_storage.size(), init)
+    {}
+
+    template <typename It, typename = detail::require_input_iterator<It>>
+    small_vec(It begin, It end)
+        : vec<T>(local_storage.begin(), local_storage.size(), begin, end)
+    {}
+
+    small_vec(const vec<T>& v)
+        : vec<T>(local_storage.begin(), local_storage.size(), v)
+    {}
+
+    small_vec(vec<T>&& v)
+        : vec<T>(local_storage.begin(), local_storage.size(), std::move(v))
+    {}
+
+private:
+    std::array<T, LocalSize> local_storage;
 };
 
 }

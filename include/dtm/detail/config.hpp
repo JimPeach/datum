@@ -1,0 +1,10 @@
+// config.hpp
+// 
+// Library configuration
+
+#ifndef INCLUDED_DATUM_DETAIL_CONFIG_HPP
+#define INCLUDED_DATUM_DETAIL_CONFIG_HPP
+
+#define DATUM_IS_64BIT_SIZET
+
+#endif //INCLUDED_DATUM_DETAIL_CONFIG_HPP
